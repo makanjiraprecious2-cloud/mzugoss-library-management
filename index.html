@@ -3292,6 +3292,11 @@ html[data-theme="light"] #adminPanel .admin-menu {
 }
 </style>
 
+
+<style id="mzugoss-admin-return-tab-style">
+#adminReturnButton{background:#166534!important;color:#fff!important;border:1px solid #14532d!important;border-radius:8px!important;padding:9px 14px!important;font-weight:700!important;cursor:pointer!important;white-space:nowrap!important}
+#adminReturnButton:hover{background:#14532d!important}
+</style>
 </head>
 
 
@@ -6610,134 +6615,20 @@ DATA STORAGE
 
 
 
+// One-time clean start requested for the MZUGOSS Online version: clear this browser's old test records before loading app state.
+(function(){
+  const flag="mzugoss_online_fresh_start_20261013_v1";
+  try{
+    if(!localStorage.getItem(flag)){
+      ["schoolBooks","borrowedBooks","returnedArchive","mzugossStudents","mzugossDroppedStudents","mzugossAlumniStudents","mzugossRequests","mzugossMessages"].forEach(k=>localStorage.removeItem(k));
+      localStorage.setItem(flag,"1");
+    }
+  }catch(e){console.warn("MZUGOSS local clean start could not run",e);}
+})();
+
 let books =
 
- JSON.parse(localStorage.getItem("schoolBooks")) || [
-
-
-
-  {
-
-   id:1,
-
-   title:"Things Fall Apart",
-
-   author:"Chinua Achebe",
-
-   category:"Literature",
-
-   quantity:3,
-
-   available:3,
-
-   barcode:"LIT001"
-
-  },
-
-
-
-  {
-
-   id:2,
-
-   title:"The River Between",
-
-   author:"Ngugi wa Thiong'o",
-
-   category:"Literature",
-
-   quantity:2,
-
-   available:2,
-
-   barcode:"LIT002"
-
-  },
-
-
-
-  {
-
-   id:3,
-
-   title:"Introduction to Biology",
-
-   author:"School Textbook",
-
-   category:"Science",
-
-   quantity:5,
-
-   available:5,
-
-   barcode:"SCI001"
-
-  },
-
-
-
-  {
-
-   id:4,
-
-   title:"Mathematics for Schools",
-
-   author:"School Textbook",
-
-   category:"Mathematics",
-
-   quantity:4,
-
-   available:4,
-
-   barcode:"MAT001"
-
-  },
-
-
-
-  {
-
-   id:5,
-
-   title:"World History",
-
-   author:"School Textbook",
-
-   category:"History",
-
-   quantity:3,
-
-   available:3,
-
-   barcode:"HIS001"
-
-  },
-
-
-
-  {
-
-   id:6,
-
-   title:"Computer Science Basics",
-
-   author:"School Textbook",
-
-   category:"Computer Science",
-
-   quantity:2,
-
-   available:2,
-
-   barcode:"COM001"
-
-  }
-
-
-
-];
-
+ JSON.parse(localStorage.getItem("schoolBooks")) || [];
 
 
 
@@ -8436,9 +8327,9 @@ function addBook(){
 
 
 
- showAdminSection("adminDashboard");
-
-
+ showAdminSection("adminBookManagement");
+ displayBooks();
+ updateStats();
 
 }
 
@@ -13124,21 +13015,23 @@ SEND REQUEST
 
 
 function sendBorrowRequest(){
- if(!selectedRequestBook || !loggedInStudent) return;
- const borrowDate = document.getElementById("requestBorrowDate").value;
- if(!borrowDate){ alert("Please choose the date you want to borrow this book."); return; }
- const today = new Date().toISOString().split("T")[0];
- if(borrowDate < today){ alert("Borrow date cannot be in the past."); return; }
- const existing = requests.some(r => r.libraryId === loggedInStudent.libraryId && r.bookTitle === selectedRequestBook.title);
- if(existing){ alert("You have already requested this book."); return; }
- if(selectedRequestBook.available <= 0){ alert("This book is no longer available."); return; }
- selectedRequestBook.available--;
- const due = new Date(borrowDate + "T00:00:00");
- due.setDate(due.getDate() + 14);
- const dueDate = due.toISOString().split("T")[0];
- requests.unshift({id:Date.now(),bookId:selectedRequestBook.id,bookTitle:selectedRequestBook.title,bookBarcode:selectedRequestBook.barcode,shelfNumber:selectedRequestBook.shelfNumber || "",shelfSection:selectedRequestBook.shelfSection || selectedRequestBook.category || "",shelfRow:selectedRequestBook.shelfRow || "",shelfPosition:selectedRequestBook.shelfPosition || "",studentName:loggedInStudent.name,studentForm:loggedInStudent.form,libraryId:loggedInStudent.libraryId,borrowDate,dueDate,reserved:true,date:new Date().toLocaleString()});
- messages.unshift({type:"request-message",text:`REQUEST: ${loggedInStudent.name} (${loggedInStudent.form}) requested "${selectedRequestBook.title}" for ${borrowDate}`,date:new Date().toLocaleString(),studentName:loggedInStudent.name,studentId:loggedInStudent.libraryId,studentForm:loggedInStudent.form,bookTitle:selectedRequestBook.title});
- saveData(); updateStats(); closeRequestModal(); displayStudentMyRequests(); displayStudentBooks(); updateMessageCounts(); showToast("Request sent and one copy reserved.");
+ if(!selectedRequestBook || !loggedInStudent){showToast("Please sign in and select a book first.","var(--red)");return;}
+ const dateInput=document.getElementById("requestBorrowDate");
+ const borrowDate=dateInput?dateInput.value:"";
+ if(!borrowDate){alert("Please choose the date you want to borrow this book.");return;}
+ const today=new Date();today.setHours(0,0,0,0);
+ const chosen=new Date(borrowDate+"T00:00:00");
+ if(Number.isNaN(chosen.getTime())||chosen<today){alert("Borrow date cannot be in the past.");return;}
+ const existing=requests.some(r=>String(r.libraryId)===String(loggedInStudent.libraryId)&&String(r.bookId)===String(selectedRequestBook.id)&&!r.rejected);
+ if(existing){alert("You have already requested this book.");return;}
+ if(Number(selectedRequestBook.available||0)<=0){alert("This book is no longer available.");return;}
+ const due=new Date(chosen);due.setDate(due.getDate()+14);
+ const dueDate=new Date(due.getTime()-due.getTimezoneOffset()*60000).toISOString().slice(0,10);
+ const req={id:Date.now(),bookId:selectedRequestBook.id,bookTitle:selectedRequestBook.title,bookBarcode:selectedRequestBook.barcode||"",shelfNumber:selectedRequestBook.shelfNumber||"",shelfSection:selectedRequestBook.shelfSection||selectedRequestBook.category||"",shelfRow:selectedRequestBook.shelfRow||"",shelfPosition:selectedRequestBook.shelfPosition||"",studentName:loggedInStudent.name,studentForm:loggedInStudent.form,libraryId:loggedInStudent.libraryId,borrowDate,dueDate,reserved:false,approved:false,rejected:false,status:"pending",date:new Date().toLocaleString()};
+ requests.unshift(req);
+ messages.unshift({type:"request-message",text:`REQUEST: ${loggedInStudent.name} (${loggedInStudent.form}) requested "${selectedRequestBook.title}" for ${borrowDate}`,date:new Date().toLocaleString(),studentName:loggedInStudent.name,studentId:loggedInStudent.libraryId,studentForm:loggedInStudent.form,bookTitle:selectedRequestBook.title,requestId:req.id});
+ saveData();updateStats();displayRequests();closeRequestModal();displayStudentMyRequests();displayStudentBooks();updateMessageCounts();
+ if(typeof showToast==="function")showToast("Sending request to the librarian…");
 }
 
 /* =========================================================
@@ -17510,13 +17403,44 @@ html[data-theme="dark"] *,html[data-theme="light"] *{color-scheme:light!importan
   const $=id=>document.getElementById(id);
   const clean=v=>String(v==null?'':v).trim();
   // Remove the redundant Back control added by earlier UI patches. The existing Home tab remains.
+  function syncAdminReturnButton(){
+    const nav=$('#librarianSystem')?.querySelector(':scope > nav');
+    if(!nav)return;
+    const isAdminVisit=sessionStorage.getItem('mzugossRole')==='admin' &&
+      sessionStorage.getItem('mzugossLibrarianOpenedByAdmin')==='1';
+    let button=$('#adminReturnButton');
+    if(!isAdminVisit){if(button)button.remove();return;}
+    if(!button){
+      const target=nav.querySelector(':scope > div:last-child')||nav;
+      button=document.createElement('button');
+      button.type='button';
+      button.id='adminReturnButton';
+      button.textContent='Return to Administrator';
+      button.setAttribute('aria-label','Return to Administrator panel');
+      button.onclick=function(){
+        if(sessionStorage.getItem('mzugossRole')!=='admin' ||
+           sessionStorage.getItem('mzugossLibrarianOpenedByAdmin')!=='1')return;
+        sessionStorage.removeItem('mzugossLibrarianOpenedByAdmin');
+        if(typeof window.openAdminFromLibrarian==='function')window.openAdminFromLibrarian();
+        else{
+          const lib=$('librarianSystem'),admin=$('adminPanel');
+          if(lib)lib.style.display='none';
+          if(admin)admin.style.display='block';
+        }
+        button.remove();
+      };
+      target.appendChild(button);
+    }
+    button.style.display='inline-flex';
+  }
   function cleanLibrarianNav(){
     const nav=$('#librarianSystem')?.querySelector(':scope > nav'); if(!nav)return;
-    nav.querySelectorAll('.librarian-back-home,.ui-back-button,#adminReturnButton,button[data-nav-back="true"]').forEach(b=>b.remove());
+    nav.querySelectorAll('.librarian-back-home,.ui-back-button,button[data-nav-back="true"]').forEach(b=>b.remove());
     nav.querySelectorAll('button').forEach(b=>{if(/^back(?:\s|$)/i.test(clean(b.textContent)))b.remove();});
     const tabs=nav.querySelector(':scope > div:last-child');
     if(tabs){tabs.style.marginLeft='auto';tabs.style.justifyContent='flex-end';}
     $('#mzugossLibrarianLiveStats')?.remove();
+    syncAdminReturnButton();
   }
   // Keep the internal field name for compatibility with existing code, but present it as Publisher.
   function setupPublisherField(){
@@ -18272,6 +18196,477 @@ html[data-theme="dark"] *,html[data-theme="light"] *{color-scheme:light!importan
  }
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
  document.addEventListener('click',e=>{if(e.target.closest('#adminPanel'))setTimeout(()=>{renderShelfMap();decorateCards()},50)});
+})();
+</script>
+
+
+<!-- MZUGOSS Supabase connection layer -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function(){
+  // SETUP: paste your Supabase Project URL, publishable (or legacy anon) key,
+  // and the email of the ONE shared Supabase Auth user below.
+  // Never put a service_role/secret key in this HTML file.
+  const SUPABASE_URL = "https://kzjijmsbeaozrdfcinaf.supabase.co";
+  const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_Z_YOgKrJqRg-tZvCxtJhCg_m7Ym3Ksr";
+  const ADMIN_AUTH_EMAIL = "makanjiraprecious2@gmail.com";
+  const LIBRARIAN_AUTH_EMAIL = "premaog6@gmail.com";
+  let cloudClient = null;
+  let cloudRole = "";
+  let cloudSyncPromise = Promise.resolve();
+  let cloudSyncTimer = null;
+  let cloudStatusNode = null;
+  const oldSaveData = window.saveData;
+
+  function statusNode(){
+    if(cloudStatusNode && document.body.contains(cloudStatusNode)) return cloudStatusNode;
+    cloudStatusNode = document.createElement("div");
+    cloudStatusNode.id = "mzugossCloudStatus";
+    cloudStatusNode.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:99999;max-width:calc(100vw - 32px);padding:10px 14px;border-radius:10px;background:#f1f5f9;color:#1e293b;border:1px solid #cbd5e1;box-shadow:0 4px 18px #0001;font:600 13px Arial,sans-serif;display:none";
+    document.body.appendChild(cloudStatusNode);
+    return cloudStatusNode;
+  }
+  function cloudNotice(message, error){
+    const n=statusNode(); n.textContent=message; n.style.display="block";
+    n.style.background=error?"#fff1f2":"#f0fdf4";
+    n.style.color=error?"#9f1239":"#166534";
+    n.style.borderColor=error?"#fecdd3":"#bbf7d0";
+    clearTimeout(n._hideTimer); n._hideTimer=setTimeout(()=>{n.style.display="none"},6500);
+  }
+  function getClient(){
+    if(cloudClient) return cloudClient;
+    if(!window.supabase || !window.supabase.createClient) throw new Error("Supabase library did not load. Check your internet connection.");
+    cloudClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+    return cloudClient;
+  }
+  function val(o, keys, fallback=""){
+    for(const k of keys){ if(o && o[k]!==undefined && o[k]!==null && o[k]!=="") return o[k]; }
+    return fallback;
+  }
+  function allLocalStudents(){
+    const rows=[];
+    (students||[]).forEach(s=>rows.push({...s,_status:"active"}));
+    (droppedStudents||[]).forEach(s=>rows.push({...s,_status:"dropped"}));
+    (alumniStudents||[]).forEach(s=>rows.push({...s,_status:"alumni"}));
+    return rows;
+  }
+  function bookToRow(b){
+    const qty=Math.max(0,Number(b.quantity)||1);
+    return {
+      title:String(val(b,["title","name"],"Untitled book")),
+      author:String(val(b,["author"],"")),
+      publisher:String(val(b,["publisher","category"],"")),
+      subject:String(val(b,["subjectName","subject","bookSubject"],"")),
+      class_name:String(val(b,["className","bookClass","form"],"")),
+      department:String(val(b,["department","shelfDepartment"],"")),
+      shelf_level:String(val(b,["shelfLevel","shelfSection"],"")),
+      shelf_row:String(val(b,["shelfRow","shelfNumber"],"")),
+      shelf_column:String(val(b,["shelfColumn","shelfPosition"],"")),
+      shelf_number:String(val(b,["shelfNumber"],"")),
+      shelf_section:String(val(b,["shelfSection"],"")),
+      shelf_position:String(val(b,["shelfPosition"],"")),
+      book_number:String(val(b,["bookNumber"],"")),
+      barcode:String(val(b,["barcode"],""))||null,
+      quantity:qty,
+      available:Math.min(qty,Math.max(0,Number(b.available ?? qty)||0))
+    };
+  }
+  function rowToBook(r){
+    return {id:r.id,title:r.title,author:r.author||"",category:r.publisher||"",publisher:r.publisher||"",
+      subjectName:r.subject||"",subject:r.subject||"",className:r.class_name||"",department:r.department||"",
+      shelfLevel:r.shelf_level||"",shelfSection:r.shelf_section||r.shelf_level||"",
+      shelfRow:r.shelf_row||"",shelfColumn:r.shelf_column||"",shelfNumber:r.shelf_number||r.shelf_row||"",
+      shelfPosition:r.shelf_position||r.shelf_column||"",bookNumber:r.book_number||"",barcode:r.barcode||"",
+      quantity:Number(r.quantity)||1,available:Number(r.available)||0};
+  }
+  function studentToRow(s,status){
+    const form=String(val(s,["form","className","class_name"],"Form 1"));
+    return {library_id:String(val(s,["libraryId","library_id","studentNumber"],"")).trim(),
+      full_name:String(val(s,["name","full_name","studentName"],"")).trim(),
+      class_name:/^form\s*[1-4]$/i.test(form)?("Form "+form.match(/[1-4]/)[0]):"Form 1",
+      profile_photo:val(s,["photo","profilePhoto","profile_photo"],null),
+      status:status||s._status||"active",
+      start_year:Number(val(s,["startYear","yearStarted","start_year"],0))||null,
+      end_year:Number(val(s,["goneYear","endYear","yearGone","end_year"],0))||null,
+      default_password_change_required:s.mustChangeCredentials!==false};
+  }
+  function rowToStudent(r){
+    return {id:r.id,name:r.full_name,libraryId:r.library_id,form:r.class_name,startYear:r.start_year||"",
+      goneYear:r.end_year||"",photo:r.profile_photo||"",mustChangeCredentials:r.default_password_change_required!==false};
+  }
+  async function upsertBookRow(db,row){
+    let found=null;
+    if(row.barcode){
+      const q=await db.from("books").select("id").eq("barcode",row.barcode).maybeSingle();
+      if(q.error) throw q.error; found=q.data;
+    }
+    if(!found){
+      const q=await db.from("books").select("id").ilike("title",row.title).ilike("author",row.author).limit(1);
+      if(q.error) throw q.error; found=q.data&&q.data[0];
+    }
+    const res=found
+      ? await db.from("books").update({...row,updated_at:new Date().toISOString()}).eq("id",found.id)
+      : await db.from("books").insert(row);
+    if(res.error) throw res.error;
+  }
+  async function syncCloudData(pushLocalChanges=false){
+    if(!cloudClient || !cloudRole) return;
+    const db=cloudClient;
+    cloudNotice("Syncing MZUGOSS records with Supabase…");
+    try{
+      let remoteBooksQ=await db.from("books").select("*");
+      if(remoteBooksQ.error) throw remoteBooksQ.error;
+      const remoteBooks=remoteBooksQ.data||[];
+      const key=b=>String(b.barcode||"").trim().toLowerCase() || (String(b.title||"").trim().toLowerCase()+"|"+String(b.author||"").trim().toLowerCase());
+      const deletedQuery=await db.from("deleted_book_keys").select("book_key");
+      if(deletedQuery.error) throw deletedQuery.error;
+      const deletedBookKeys=new Set((deletedQuery.data||[]).map(x=>String(x.book_key)));
+      const localBooksRaw=Array.isArray(books)?books:[];
+      const localBooks=localBooksRaw.filter(b=>!deletedBookKeys.has(key(b)));
+      books=localBooks;
+      for(const rb of remoteBooks){ if(deletedBookKeys.has(key(rb))) { const d=await db.from("books").delete().eq("id",rb.id); if(d.error)throw d.error; } }
+      const remoteKeys=new Set(remoteBooks.filter(b=>!deletedBookKeys.has(key(b))).map(key));
+      for(const b of localBooks){
+        const row=bookToRow(b), k=key(row);
+        // First login imports only missing local books. Later saves also update existing rows.
+        if(cloudRole==="admin" && (!remoteKeys.has(k) || pushLocalChanges)){
+          await upsertBookRow(db,row); remoteKeys.add(k);
+        }
+      }
+      if(cloudRole==="admin" && pushLocalChanges){
+        const localKeys=new Set(localBooks.map(key));
+        const latestForDelete=await db.from("books").select("id,barcode,title,author");
+        if(latestForDelete.error) throw latestForDelete.error;
+        for(const remote of (latestForDelete.data||[])){
+          if(!localKeys.has(key(remote))){
+            const removed=await db.from("books").delete().eq("id",remote.id);
+            if(removed.error) throw removed.error;
+          }
+        }
+      }
+      remoteBooksQ=await db.from("books").select("*");
+      if(remoteBooksQ.error) throw remoteBooksQ.error;
+      const bookMap=new Map();
+      for(const b of (remoteBooksQ.data||[])) if(!deletedBookKeys.has(key(b))) bookMap.set(key(b),rowToBook(b));
+      for(const b of localBooks){ const k=key(b); if(!deletedBookKeys.has(k) && !bookMap.has(k)) bookMap.set(k,b); }
+      books=Array.from(bookMap.values());
+
+      const studentQuery=await db.from("students").select("*");
+      if(studentQuery.error) throw studentQuery.error;
+      const remoteStudents=studentQuery.data||[];
+      if(cloudRole==="admin"){
+        const remoteIds=new Set(remoteStudents.map(x=>String(x.library_id||"").toLowerCase()));
+        for(const s of allLocalStudents()){
+          const row=studentToRow(s,s._status);
+          if(!row.library_id || !row.full_name) continue;
+          const exists=remoteIds.has(row.library_id.toLowerCase());
+          if(!exists || pushLocalChanges){
+            const saved=await db.from("students").upsert(row,{onConflict:"library_id"});
+            if(saved.error) throw saved.error;
+            remoteIds.add(row.library_id.toLowerCase());
+          }
+        }
+      }
+      if(cloudRole==="admin" && pushLocalChanges){
+        const localStudentIds=new Set(allLocalStudents().map(x=>String(val(x,["libraryId","library_id"],"")).trim().toLowerCase()).filter(Boolean));
+        const latestStudents=await db.from("students").select("id,library_id");
+        if(latestStudents.error) throw latestStudents.error;
+        for(const remote of (latestStudents.data||[])){
+          if(!localStudentIds.has(String(remote.library_id||"").toLowerCase())){
+            const removed=await db.from("students").delete().eq("id",remote.id);
+            if(removed.error) throw removed.error;
+          }
+        }
+      }
+      const fresh=await db.from("students").select("*");
+      if(fresh.error) throw fresh.error;
+      const localById=new Map(allLocalStudents().map(x=>[String(val(x,["libraryId","library_id"],"")).toLowerCase(),x]));
+      const remoteById=new Map((fresh.data||[]).map(x=>[String(x.library_id).toLowerCase(),x]));
+      const active=[], dropped=[], alumni=[];
+      for(const [id,local] of localById){ if(!remoteById.has(id)) (local._status==="dropped"?dropped:local._status==="alumni"?alumni:active).push(local); }
+      for(const r of (fresh.data||[])){
+        const obj=rowToStudent(r);
+        if(r.status==="dropped") dropped.push(obj); else if(r.status==="alumni") alumni.push(obj); else active.push(obj);
+      }
+      students=active; droppedStudents=dropped; alumniStudents=alumni;
+      if(typeof oldSaveData==="function") oldSaveData();
+      if(typeof window.refreshAllBookShelves==="function") window.refreshAllBookShelves();
+      if(typeof window.updateAdminDashboard==="function" && cloudRole==="admin") window.updateAdminDashboard();
+      if(typeof window.displayBooks==="function") window.displayBooks();
+      if(typeof window.displayStudentBooks==="function") window.displayStudentBooks();
+      cloudNotice("Connected to Supabase. Books and student records synced.");
+    }catch(err){
+      console.error("MZUGOSS Supabase sync error:",err);
+      cloudNotice("Supabase connection/sync failed: "+(err.message||String(err)),true);
+    }
+  }
+  function scheduleSync(){
+    if(!cloudClient || !cloudRole) return;
+    clearTimeout(cloudSyncTimer);
+    cloudSyncTimer=setTimeout(()=>{cloudSyncPromise=cloudSyncPromise.then(()=>syncCloudData(true)).catch(e=>console.error(e));},900);
+  }
+  window.mzugossCloudClient=function(){return getClient();};
+  window.saveData=function(){
+    if(typeof oldSaveData==="function") oldSaveData();
+    scheduleSync();
+  };
+  async function signInForRole(requestedRole,password,errorId){
+    const errorEl=document.getElementById(errorId);
+    if(errorEl) errorEl.textContent="Loading…";
+    try{
+      if(!SUPABASE_URL.startsWith("https://") || SUPABASE_URL.includes("PASTE_YOUR"))
+        throw new Error("Add your Supabase Project URL in the connection settings at the bottom of this HTML file.");
+      if(SUPABASE_PUBLISHABLE_KEY.includes("PASTE_YOUR"))
+        throw new Error("Add your Supabase publishable/anon key in the connection settings at the bottom of this HTML file.");
+      const authEmail=requestedRole==="admin"?ADMIN_AUTH_EMAIL:LIBRARIAN_AUTH_EMAIL;
+      if(!authEmail.includes("@")) throw new Error("The staff login account is not configured.");
+      const db=getClient();
+      const {data,error}=await db.auth.signInWithPassword({email:authEmail,password});
+      if(error) throw error;
+      const p=await db.from("profiles").select("role,display_name").eq("user_id",data.user.id).single();
+      if(p.error) throw p.error;
+      // One shared account is configured as admin in Supabase. That same account
+      // can open either staff panel; panel navigation context controls the Admin Panel return tab.
+      if(p.data.role!==requestedRole){
+        await db.auth.signOut();
+        throw new Error("This Supabase account is not assigned the "+requestedRole+" role in public.profiles.");
+      }
+      cloudRole=p.data.role;
+      if(errorEl) errorEl.textContent="";
+      if(errorEl) errorEl.textContent="Loading…";
+      await syncCloudData();
+      if(errorEl) errorEl.textContent="";
+      return true;
+    }catch(err){
+      console.error(err);
+      if(errorEl) errorEl.textContent=err.message||"Supabase sign-in failed.";
+      cloudNotice(err.message||"Supabase sign-in failed.",true);
+      return false;
+    }
+  }
+  function addPasswordOnlyNote(modalId,passwordId){
+    const modal=document.getElementById(modalId), password=document.getElementById(passwordId);
+    if(!modal||!password) return;
+    const email=modal.querySelector(".mzugoss-supabase-email");
+    if(email) email.remove();
+    const note=modal.querySelector(".mzugoss-cloud-note");
+    if(note) note.remove();
+    password.placeholder="Shared system password";
+    password.autocomplete="current-password";
+  }
+  const originalVerifyAdmin=window.verifyAdminPassword;
+  window.verifyAdminPassword=async function(){
+    const pass=document.getElementById("adminPasswordInput")?.value||"";
+    if(!pass){const e=document.getElementById("adminPasswordError");if(e)e.textContent="Enter the shared system password.";return;}
+    const ok=await signInForRole("admin",pass,"adminPasswordError");
+    if(!ok)return;
+    if(typeof window.closeAdminPassword==="function")window.closeAdminPassword();
+    activeRole="admin";sessionStorage.setItem("mzugossRole","admin");
+    document.getElementById("dashboardSelector")&&(document.getElementById("dashboardSelector").style.display="none");
+    document.getElementById("adminPanel")&&(document.getElementById("adminPanel").style.display="block");
+    if(typeof window.updateAdminDashboard==="function")window.updateAdminDashboard();
+    if(typeof window.displayAdminClasses==="function")window.displayAdminClasses();
+    if(typeof window.displaySubjectStatistics==="function")window.displaySubjectStatistics();
+  };
+  const originalVerifyLibrarian=window.verifyLibrarianPassword;
+  window.verifyLibrarianPassword=async function(){
+    const pass=document.getElementById("librarianPasswordInput")?.value||"";
+    if(!pass){const e=document.getElementById("librarianPasswordError");if(e)e.textContent="Enter the shared system password.";return;}
+    const ok=await signInForRole("librarian",pass,"librarianPasswordError");
+    if(!ok)return;
+    if(typeof window.closeLibrarianPassword==="function")window.closeLibrarianPassword();
+    activeRole="admin";sessionStorage.setItem("mzugossRole","admin");
+    // A direct entry from the dashboard must not display the Admin Panel return tab.
+    sessionStorage.removeItem("mzugossLibrarianOpenedByAdmin");
+    const returnButton=document.getElementById("adminReturnButton");if(returnButton)returnButton.style.display="none";
+    if(typeof window.hideAllPanels==="function")window.hideAllPanels();
+    document.getElementById("librarianSystem")&&(document.getElementById("librarianSystem").style.display="block");
+    if(typeof window.checkOverdueBooks==="function")window.checkOverdueBooks();
+    if(typeof window.updateStats==="function")window.updateStats();
+    if(typeof window.displayBooks==="function")window.displayBooks();
+    if(typeof window.updateStudentSuggestions==="function")window.updateStudentSuggestions();
+    if(typeof window.displayMessages==="function")window.displayMessages();
+    if(typeof window.displayRequests==="function")window.displayRequests();
+  };
+  window.mzugossSupabaseStatus=async function(){
+    try{
+      const db=getClient();
+      const {data,error}=await db.auth.getSession();
+      if(error)throw error;
+      if(!data.session){alert("No Supabase session. Sign in to the Administrator or Librarian panel using the shared system password.");return;}
+      const ping=await db.from("books").select("id").limit(1);
+      if(ping.error)throw ping.error;
+      alert("Supabase connection is working. Your account is signed in and can read the shared book catalogue.");
+    }catch(e){alert("Supabase test failed: "+(e.message||String(e)));}
+  };
+  function initCloudUI(){
+    addPasswordOnlyNote("adminPasswordModal","adminPasswordInput");
+    addPasswordOnlyNote("librarianPasswordModal","librarianPasswordInput");
+    // Password-only UI: the shared account email is configured above, not entered by users.
+  }
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",initCloudUI);else initCloudUI();
+})();
+</script>
+
+<script id="mzugoss-online-reliability-fixes">
+(function(){
+  const byId=id=>document.getElementById(id);
+  const oldBorrowBook=window.borrowBook;
+  window.borrowBook=function(id){
+    // Inline onclick handlers may pass IDs as strings while the stored IDs are numbers.
+    const book=(Array.isArray(books)?books:[]).find(b=>String(b.id)===String(id));
+    if(!book){if(typeof showToast==='function')showToast('Book not found. Refresh the Books tab and try again.','var(--red)');return;}
+    selectedBookId=book.id;
+    if(typeof oldBorrowBook==='function')oldBorrowBook.call(this,book.id);
+    const form=byId('borrowFormPage');
+    if(form){form.classList.add('active');form.style.display='block';}
+    ['borrowBookNumber','borrowBookTitle','borrowBookAuthor','borrowBookCategory'].forEach((id,i)=>{
+      const el=byId(id);if(!el)return;
+      const vals=[book.barcode||'',book.title||'',book.author||'',book.category||book.publisher||''];
+      el.value=vals[i];
+    });
+    const student=byId('borrowStudentSearch');if(student){student.value='';student.dataset.studentId='';}
+    const info=byId('borrowStudentInfo');if(info)info.innerHTML='<p>Select the registered student, then scan the book barcode and printed book number. The student must have an approved request for this book.</p>';
+  };
+
+  // Keep the new book visible in Manage Books instead of sending the user away from the catalogue.
+  const originalAddBook=window.addBook;
+  if(typeof originalAddBook==='function'&&!originalAddBook.__onlineManageBooksFix){
+    const wrappedAddBook=function(){
+      const before=(Array.isArray(books)?books.length:0);
+      const result=originalAddBook.apply(this,arguments);
+      const after=(Array.isArray(books)?books.length:0);
+      if(after>before){
+        setTimeout(()=>{
+          try{if(typeof window.showAdminSection==='function')window.showAdminSection('adminBookManagement');}catch(e){}
+          try{if(typeof window.displayBooks==='function')window.displayBooks();}catch(e){}
+          try{if(typeof window.updateStats==='function')window.updateStats();}catch(e){}
+        },0);
+      }
+      return result;
+    };
+    wrappedAddBook.__onlineManageBooksFix=true;window.addBook=wrappedAddBook;
+  }
+
+  // Persist deletion markers before removing a book, so another device's stale cache cannot restore it.
+  window.deleteBook=async function(id){
+    const book=(Array.isArray(books)?books:[]).find(b=>String(b.id)===String(id));if(!book)return;
+    if((Array.isArray(borrowed)?borrowed:[]).some(x=>!x.returned&&String(x.bookId)===String(book.id))){alert('This book cannot be deleted while a copy is borrowed. Return it first.');return;}
+    if(!confirm('Delete "'+(book.title||'this book')+'" from the shared catalogue? This deletion will be kept across devices.'))return;
+    const bookKey=String(book.barcode||'').trim().toLowerCase()||(String(book.title||'').trim().toLowerCase()+'|'+String(book.author||'').trim().toLowerCase());
+    const db=requestDb();
+    if(!db){alert('The shared database is unavailable. The book was not deleted because other devices might restore it.');return;}
+    const mark=await db.from('deleted_book_keys').insert({book_key:bookKey});if(mark.error&&mark.error.code!=='23505'){alert('The book was not deleted because the shared deletion marker could not be saved: '+mark.error.message);return;}
+    books=books.filter(b=>String(b.id)!==String(book.id));
+    if(typeof saveData==='function')saveData();
+    if(typeof displayBooks==='function')displayBooks();
+    if(typeof displayStudentBooks==='function')displayStudentBooks();
+    if(typeof updateStats==='function')updateStats();
+    if(typeof renderShelfMap==='function')renderShelfMap();
+    if(typeof showToast==='function')showToast('Book deleted from the catalogue. The deletion marker is saved for other devices.');
+  };
+
+  // The original approval flow reserved stock by decrementing it when the student sent the request.
+  // Requests now stay pending without stock changes; approval reserves one copy exactly once.
+  const originalApprove=window.approveRequest;
+  if(typeof originalApprove==='function'&&!originalApprove.__onlineStockFix){
+    const wrappedApprove=function(index){
+      const req=(Array.isArray(requests)?requests:[])[index];
+      if(!req)return;
+      if(req.approved){if(typeof showToast==='function')showToast('This request is already approved.');return;}
+      const book=(books||[]).find(b=>String(b.id)===String(req.bookId))||(books||[]).find(b=>String(b.title).toLowerCase()===String(req.bookTitle).toLowerCase());
+      const student=(students||[]).find(s=>String(s.libraryId)===String(req.libraryId));
+      if(!book){alert('The requested book is no longer in the catalogue.');return;}
+      if(!student){alert('The student is no longer registered.');return;}
+      if(Number(book.available||0)<1){alert('No copies are available to reserve for this request.');return;}
+      const result=originalApprove.apply(this,arguments);
+      if(req.approved&&!req.reserved){book.available=Math.max(0,Number(book.available||0)-1);req.reserved=true;req.status='approved';req.approvedDate=req.approvedDate||new Date().toLocaleString();
+        if(typeof window.saveData==='function')window.saveData();
+        if(typeof window.displayBooks==='function')window.displayBooks();
+        if(typeof window.displayStudentBooks==='function')window.displayStudentBooks();
+        if(typeof window.displayRequests==='function')window.displayRequests();
+        if(typeof window.updateStats==='function')window.updateStats();
+        if(typeof showToast==='function')showToast('Request approved successfully. '+req.studentName+' may collect '+req.bookTitle+'.');
+      }
+      return result;
+    };
+    wrappedApprove.__onlineStockFix=true;window.approveRequest=wrappedApprove;
+  }
+
+  // Pending rejection must not add stock back because pending requests never reserved it.
+  const originalReject=window.rejectRequest;
+  if(typeof originalReject==='function'&&!originalReject.__onlinePendingRejectFix){
+    const wrappedReject=function(index){
+      const req=(requests||[])[index];
+      if(!req)return;
+      if(req.approved||req.reserved)return originalReject.apply(this,arguments);
+      const name=req.studentName||'Student',title=req.bookTitle||'book';
+      requests.splice(index,1);
+      (messages||(messages=[])).unshift({type:'request-message',text:'REJECTED: Request from '+name+' for "'+title+'" was rejected.',date:new Date().toLocaleString(),studentName:name,studentId:req.libraryId,studentForm:req.studentForm,bookTitle:title});
+      if(typeof window.saveData==='function')window.saveData();
+      if(typeof window.displayRequests==='function')window.displayRequests();
+      if(typeof window.updateMessageCounts==='function')window.updateMessageCounts();
+      if(typeof showToast==='function')showToast('Request rejected. No book copy was deducted.','var(--red)');
+    };
+    wrappedReject.__onlinePendingRejectFix=true;window.rejectRequest=wrappedReject;
+  }
+
+  // Send student requests to the shared database so they appear in the Librarian Panel on another device.
+  function requestDb(){try{return window.mzugossCloudClient?window.mzugossCloudClient():window.supabase.createClient("https://kzjijmsbeaozrdfcinaf.supabase.co","sb_publishable_Z_YOgKrJqRg-tZvCxtJhCg_m7Ym3Ksr");}catch(e){return null;}}
+  async function loadRemoteRequests(){
+    const db=requestDb();if(!db)return;
+    const res=await db.from('borrow_requests').select('*').order('created_at',{ascending:false}).limit(500);
+    if(res.error){if(res.error.code!=='42501')console.warn('Request sync:',res.error.message);return;}
+    const local=Array.isArray(requests)?requests:[];
+    const byClient=new Map(local.map(r=>[String(r.client_request_id||r.remoteClientId||r.id),r]));
+    const remote=res.data||[];
+    for(const r of remote){
+      const mapped={id:r.client_request_id||r.id,remoteId:r.id,client_request_id:r.client_request_id,bookId:r.book_id,bookTitle:r.book_title,bookBarcode:r.book_barcode||'',studentName:r.student_name,studentForm:r.student_form||'',libraryId:r.library_id,borrowDate:r.borrow_date,dueDate:r.due_date,reserved:r.status==='approved',approved:r.status==='approved',rejected:r.status==='rejected',status:r.status,date:r.created_at,approvedDate:r.approved_at||''};
+      const existing=local.find(x=>String(x.client_request_id||x.remoteId||x.id)===String(r.client_request_id||r.id));
+      if(existing)Object.assign(existing,mapped);else local.push(mapped);
+    }
+    // Keep local-only requests briefly only when not yet written remotely; the submit handler removes failed writes.
+    requests=local;
+    if(typeof oldDisplayRequests==='function')oldDisplayRequests();
+    if(typeof window.displayStudentMyRequests==='function')window.displayStudentMyRequests();
+    if(typeof window.updateMessageCounts==='function')window.updateMessageCounts();
+  }
+  const oldSend=window.sendBorrowRequest;
+  window.sendBorrowRequest=async function(){
+    const before=(requests||[]).length;
+    if(typeof oldSend==='function')oldSend.apply(this,arguments);
+    const list=requests||[];if(list.length===before)return;
+    const req=list[0];if(!req)return;
+    req.client_request_id=String(req.id);req.remoteClientId=String(req.id);
+    const db=requestDb();if(!db){list.shift();alert('The shared database is unavailable. The request was not sent to the librarian.');return;}
+    const payload={client_request_id:String(req.id),student_name:req.studentName,student_form:req.studentForm||'',library_id:req.libraryId,book_id:String(req.bookId),book_title:req.bookTitle,book_barcode:req.bookBarcode||'',borrow_date:req.borrowDate,due_date:req.dueDate,status:'pending'};
+    const saved=await db.from('borrow_requests').upsert(payload,{onConflict:'client_request_id'}).select('id').single();
+    if(saved.error){requests=list.filter(x=>String(x.id)!==String(req.id));if(typeof window.saveData==='function')window.saveData();if(typeof window.displayStudentMyRequests==='function')window.displayStudentMyRequests();alert('Request was not sent to the librarian. Database error: '+saved.error.message);return;}
+    req.remoteId=saved.data.id;
+    if(typeof window.saveData==='function')window.saveData();
+    if(typeof window.showToast==='function')window.showToast('Borrow request sent successfully. The librarian can now see it on any connected device.');
+  };
+  const oldDisplayRequests=window.displayRequests;
+  if(typeof oldDisplayRequests==='function')window.displayRequests=function(){const result=oldDisplayRequests.apply(this,arguments);loadRemoteRequests().catch(e=>console.warn(e));return result;};
+  const oldApproveRequest=window.approveRequest;
+  if(typeof oldApproveRequest==='function')window.approveRequest=async function(index){
+    const req=(requests||[])[index];if(!req)return;
+    const result=oldApproveRequest.apply(this,arguments);
+    if(req.approved){const db=requestDb();if(db){const q=await db.from('borrow_requests').update({status:'approved',approved_at:new Date().toISOString()}).eq('client_request_id',String(req.client_request_id||req.id));if(q.error)alert('Local approval was recorded, but cloud approval failed: '+q.error.message);}}
+    return result;
+  };
+  const oldRejectRequest=window.rejectRequest;
+  if(typeof oldRejectRequest==='function')window.rejectRequest=async function(index){
+    const req=(requests||[])[index];if(!req)return;
+    const result=oldRejectRequest.apply(this,arguments);
+    const db=requestDb();if(db){const q=await db.from('borrow_requests').update({status:'rejected'}).eq('client_request_id',String(req.client_request_id||req.id));if(q.error)alert('Local rejection was recorded, but cloud rejection failed: '+q.error.message);}
+    return result;
+  };
+  // Refresh incoming requests periodically while the staff panel is open.
+  setInterval(()=>{const panel=document.getElementById('librarianSystem');if(panel&&getComputedStyle(panel).display!=='none')loadRemoteRequests().catch(()=>{});},12000);
+
+  // Staff login shows Loading rather than exposing connection narration in the login form.
+  const css=document.createElement('style');css.textContent='#adminPasswordError,#librarianPasswordError{color:#b42318}#mzugossCloudStatus{font-weight:600}';document.head.appendChild(css);
 })();
 </script>
 
